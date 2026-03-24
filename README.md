@@ -1,1 +1,1 @@
-A cli container creation tool
+layer build caching implementation of Docksmith 

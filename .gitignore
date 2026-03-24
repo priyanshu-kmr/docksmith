@@ -1,0 +1,4 @@
+DOCKSMITH.pdf
+tests/
+coverage.out
+*.test

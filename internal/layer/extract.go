@@ -1,4 +1,4 @@
-	package layer
+package layer
 
 import (
 	"archive/tar"

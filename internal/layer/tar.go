@@ -136,7 +136,7 @@ func (tc *TarCreator) addToTar(tw *tar.Writer, entry fileEntry, srcDir string) e
 
 	// Set deterministic values
 	header.Name = entry.path
-	header.ModTime = time.Unix(0, 0)  // Zero timestamp for reproducibility
+	header.ModTime = time.Unix(0, 0) // Zero timestamp for reproducibility
 	header.AccessTime = time.Unix(0, 0)
 	header.ChangeTime = time.Unix(0, 0)
 	header.Uid = 0

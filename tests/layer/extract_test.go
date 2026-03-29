@@ -1,6 +1,8 @@
 package layer_test
 
 import (
+	"archive/tar"
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -131,4 +133,32 @@ func TestExtractor_ExtractLayer(t *testing.T) {
 	if string(content) != "test" {
 		t.Error("extracted content incorrect")
 	}
+}
+
+func TestExtract_RejectsPathTraversal(t *testing.T) {
+	// Create a malicious tar with path traversal attempt
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+
+	// Try to escape using "../../../etc/passwd"
+	header := &tar.Header{
+		Name:     "../../../etc/passwd",
+		Mode:     0644,
+		Size:     4,
+		Typeflag: tar.TypeReg,
+	}
+	tw.WriteHeader(header)
+	tw.Write([]byte("bad"))
+	tw.Close()
+
+	// Attempt extraction - should fail
+	destDir := t.TempDir()
+	err := layer.Extract(bytes.NewReader(buf.Bytes()), destDir)
+
+	if err == nil {
+		t.Fatal("Extract should reject path traversal attempt")
+	}
+
+	// os.OpenRoot will return an error when trying to open a path outside root
+	t.Logf("Path traversal blocked: %v", err)
 }

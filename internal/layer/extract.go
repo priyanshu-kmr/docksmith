@@ -20,6 +20,18 @@ func NewExtractor(store *Store) *Extractor {
 
 // Extract extracts a tar archive to a destination directory
 func Extract(tarReader io.Reader, destDir string) error {
+	// Ensure destination directory exists
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return fmt.Errorf("create dest dir: %w", err)
+	}
+
+	// Open root directory - all operations confined to this root
+	root, err := os.OpenRoot(destDir)
+	if err != nil {
+		return fmt.Errorf("open root directory: %w", err)
+	}
+	defer root.Close()
+
 	tr := tar.NewReader(tarReader)
 
 	for {
@@ -31,62 +43,56 @@ func Extract(tarReader io.Reader, destDir string) error {
 			return fmt.Errorf("read tar header: %w", err)
 		}
 
-		// Construct full path
-		target := filepath.Join(destDir, header.Name)
-
-		// Ensure we don't escape the destination directory
-		if !filepath.HasPrefix(target, filepath.Clean(destDir)+string(os.PathSeparator)) {
-			return fmt.Errorf("invalid tar path: %s", header.Name)
-		}
+		// Use header.Name directly (relative path)
+		// No manual path validation - root confines all operations
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
-				return fmt.Errorf("create dir %s: %w", target, err)
+			if err := root.MkdirAll(header.Name, os.FileMode(header.Mode)); err != nil {
+				return fmt.Errorf("create dir %s: %w", header.Name, err)
 			}
 
 		case tar.TypeReg:
 			// Ensure parent directory exists
-			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
-				return fmt.Errorf("create parent dir for %s: %w", target, err)
+			if err := root.MkdirAll(filepath.Dir(header.Name), 0755); err != nil {
+				return fmt.Errorf("create parent dir for %s: %w", header.Name, err)
 			}
 
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
+			f, err := root.OpenFile(header.Name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
 			if err != nil {
-				return fmt.Errorf("create file %s: %w", target, err)
+				return fmt.Errorf("create file %s: %w", header.Name, err)
 			}
 
 			if _, err := io.Copy(f, tr); err != nil {
 				f.Close()
-				return fmt.Errorf("write file %s: %w", target, err)
+				return fmt.Errorf("write file %s: %w", header.Name, err)
 			}
 			f.Close()
 
 		case tar.TypeSymlink:
 			// Ensure parent directory exists
-			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
-				return fmt.Errorf("create parent dir for symlink %s: %w", target, err)
+			if err := root.MkdirAll(filepath.Dir(header.Name), 0755); err != nil {
+				return fmt.Errorf("create parent dir for symlink %s: %w", header.Name, err)
 			}
 
 			// Remove existing file/symlink if present
-			os.Remove(target)
+			root.Remove(header.Name)
 
-			if err := os.Symlink(header.Linkname, target); err != nil {
-				return fmt.Errorf("create symlink %s: %w", target, err)
+			if err := root.Symlink(header.Linkname, header.Name); err != nil {
+				return fmt.Errorf("create symlink %s: %w", header.Name, err)
 			}
 
 		case tar.TypeLink:
 			// Hard link
-			linkTarget := filepath.Join(destDir, header.Linkname)
-			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
-				return fmt.Errorf("create parent dir for link %s: %w", target, err)
+			if err := root.MkdirAll(filepath.Dir(header.Name), 0755); err != nil {
+				return fmt.Errorf("create parent dir for link %s: %w", header.Name, err)
 			}
 
 			// Remove existing file if present
-			os.Remove(target)
+			root.Remove(header.Name)
 
-			if err := os.Link(linkTarget, target); err != nil {
-				return fmt.Errorf("create hard link %s: %w", target, err)
+			if err := root.Link(header.Linkname, header.Name); err != nil {
+				return fmt.Errorf("create hard link %s: %w", header.Name, err)
 			}
 		}
 	}

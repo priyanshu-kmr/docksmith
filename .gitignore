@@ -1,1 +1,4 @@
-
+DOCKSMITH.pdf
+coverage.out
+*.test
+.vscode

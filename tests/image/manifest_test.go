@@ -3,6 +3,7 @@ package image_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/priyanshu/docksmith/internal/image"
 	"github.com/priyanshu/docksmith/internal/layer"
@@ -57,6 +58,10 @@ func TestManifest_ComputeDigest_Deterministic(t *testing.T) {
 	m2.AddLayer(layer.NewLayerInfo("sha256:layer1", 100, "RUN cmd1"))
 	m2.AddLayer(layer.NewLayerInfo("sha256:layer2", 200, "RUN cmd2"))
 	m2.Config.SetEnv("FOO", "bar")
+
+	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	m1.Created = created
+	m2.Created = created
 
 	digest1 := m1.ComputeDigest()
 	digest2 := m2.ComputeDigest()

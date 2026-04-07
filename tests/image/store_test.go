@@ -1,6 +1,7 @@
 package image_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/priyanshu/docksmith/internal/image"
@@ -189,7 +190,10 @@ func TestImageStore_SaveComputesDigest(t *testing.T) {
 	if m.Digest == "" {
 		t.Error("digest should be computed after save")
 	}
-	if len(m.Digest) != 64 {
-		t.Errorf("digest should be 64 chars, got %d", len(m.Digest))
+	if !strings.HasPrefix(m.Digest, "sha256:") {
+		t.Errorf("digest should have sha256: prefix, got %s", m.Digest)
+	}
+	if len(strings.TrimPrefix(m.Digest, "sha256:")) != 64 {
+		t.Errorf("digest payload should be 64 chars, got %d", len(strings.TrimPrefix(m.Digest, "sha256:")))
 	}
 }

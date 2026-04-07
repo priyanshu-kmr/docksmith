@@ -3,6 +3,7 @@ package image
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"time"
 
 	"github.com/priyanshu/docksmith/internal/layer"
@@ -41,18 +42,13 @@ func (m *Manifest) AddLayer(l *layer.LayerInfo) {
 // ComputeDigest computes the image digest from layers and config
 // Must be called after all layers are added
 func (m *Manifest) ComputeDigest() string {
-	h := sha256.New()
+	clone := m.Clone()
+	clone.Digest = ""
 
-	// Hash all layer digests in order
-	for _, l := range m.Layers {
-		h.Write([]byte(l.Digest))
-		h.Write([]byte("\n"))
-	}
-
-	// Hash config
-	h.Write([]byte(m.Config.Hash()))
-
-	m.Digest = hex.EncodeToString(h.Sum(nil))
+	// Digest is computed over canonical JSON with digest field empty.
+	b, _ := json.Marshal(clone)
+	sum := sha256.Sum256(b)
+	m.Digest = "sha256:" + hex.EncodeToString(sum[:])
 	return m.Digest
 }
 

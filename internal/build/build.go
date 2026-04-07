@@ -71,10 +71,12 @@ func (e *Engine) Build(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	manifest := image.NewManifest(name, tag)
+	previousManifest, _ := e.imageStore.Load(name, tag)
 	buildCtx := cache.NewBuildContext(opts.Context)
 
 	var prevDigest cache.LayerDigest
 	var forceMiss bool
+	allLayerStepsHit := true
 
 	buildStart := time.Now()
 	for i, inst := range instructions {
@@ -113,6 +115,7 @@ func (e *Engine) Build(ctx context.Context, opts Options) (*Result, error) {
 			}
 			if status == "CACHE MISS" {
 				forceMiss = true
+				allLayerStepsHit = false
 			}
 			manifest.AddLayer(layer.NewLayerInfo("sha256:"+string(layerDigest), size, inst.Text()))
 			prevDigest = layerDigest
@@ -137,12 +140,20 @@ func (e *Engine) Build(ctx context.Context, opts Options) (*Result, error) {
 		}
 	}
 
+	if allLayerStepsHit && previousManifest != nil {
+		manifest.Created = previousManifest.Created
+	}
+
 	manifest.ComputeDigest()
 	if err := e.imageStore.Save(manifest); err != nil {
 		return nil, fmt.Errorf("save image manifest: %w", err)
 	}
 
-	fmt.Printf("Successfully built sha256:%s %s (%.2fs)\n", manifest.Digest[:12], manifest.Reference(), time.Since(buildStart).Seconds())
+	displayDigest := manifest.Digest
+	if strings.HasPrefix(displayDigest, "sha256:") && len(displayDigest) >= 19 {
+		displayDigest = displayDigest[:19]
+	}
+	fmt.Printf("Successfully built %s %s (%.2fs)\n", displayDigest, manifest.Reference(), time.Since(buildStart).Seconds())
 	return &Result{ImageRef: manifest.Reference(), Digest: manifest.Digest}, nil
 }
 

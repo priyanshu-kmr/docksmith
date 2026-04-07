@@ -1,6 +1,7 @@
 package image_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/priyanshu/docksmith/internal/image"
@@ -64,8 +65,12 @@ func TestManifest_ComputeDigest_Deterministic(t *testing.T) {
 		t.Errorf("same manifest should produce same digest: %s vs %s", digest1, digest2)
 	}
 
-	if len(digest1) != 64 {
-		t.Errorf("digest should be 64 chars (SHA-256 hex), got %d", len(digest1))
+	if !strings.HasPrefix(digest1, "sha256:") {
+		t.Errorf("digest should have sha256: prefix, got %s", digest1)
+	}
+
+	if len(strings.TrimPrefix(digest1, "sha256:")) != 64 {
+		t.Errorf("digest payload should be 64 chars (SHA-256 hex), got %d", len(strings.TrimPrefix(digest1, "sha256:")))
 	}
 }
 

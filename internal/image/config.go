@@ -5,13 +5,22 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"sort"
+	"strings"
 )
 
-// Config holds the runtime configuration for an image
+// Config holds the runtime configuration for an image.
+// Internally uses map for Env, but serializes as ["KEY=value"] array per spec.
 type Config struct {
-	Env        map[string]string `json:"env"`
-	Cmd        []string          `json:"cmd"`
-	WorkingDir string            `json:"workingDir"`
+	Env        map[string]string `json:"-"`        // Internal: map for easy lookup
+	Cmd        []string          `json:"-"`        // Internal
+	WorkingDir string            `json:"-"`        // Internal
+}
+
+// configJSON is the JSON-serializable form matching the spec.
+type configJSON struct {
+	Env        []string `json:"Env"`
+	Cmd        []string `json:"Cmd"`
+	WorkingDir string   `json:"WorkingDir"`
 }
 
 // NewConfig creates a new empty Config
@@ -56,49 +65,83 @@ func (c *Config) SetWorkingDir(dir string) {
 	c.WorkingDir = dir
 }
 
-// Hash computes a deterministic hash of the config
-// Used for image digest computation
-func (c *Config) Hash() string {
-	h := sha256.New()
-
-	// Hash env in sorted order
+// EnvSlice returns env as sorted "KEY=value" slice (for JSON serialization).
+func (c *Config) EnvSlice() []string {
+	if len(c.Env) == 0 {
+		return []string{}
+	}
 	keys := make([]string, 0, len(c.Env))
 	for k := range c.Env {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
+	result := make([]string, 0, len(keys))
 	for _, k := range keys {
-		h.Write([]byte(k))
-		h.Write([]byte("="))
-		h.Write([]byte(c.Env[k]))
+		result = append(result, k+"="+c.Env[k])
+	}
+	return result
+}
+
+// Hash computes a deterministic hash of the config.
+func (c *Config) Hash() string {
+	h := sha256.New()
+
+	for _, entry := range c.EnvSlice() {
+		h.Write([]byte(entry))
 		h.Write([]byte("\n"))
 	}
 
-	// Hash cmd
 	for _, arg := range c.Cmd {
 		h.Write([]byte(arg))
 		h.Write([]byte("\x00"))
 	}
 
-	// Hash working dir
 	h.Write([]byte(c.WorkingDir))
 
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// MarshalJSON returns deterministic JSON representation
+// MarshalJSON serializes Config to spec-compliant JSON.
 func (c *Config) MarshalJSON() ([]byte, error) {
-	// Create ordered struct for deterministic output
-	type orderedConfig struct {
-		Env        map[string]string `json:"env"`
-		Cmd        []string          `json:"cmd"`
-		WorkingDir string            `json:"workingDir"`
-	}
-
-	return json.Marshal(orderedConfig{
-		Env:        c.Env,
+	return json.Marshal(configJSON{
+		Env:        c.EnvSlice(),
 		Cmd:        c.Cmd,
 		WorkingDir: c.WorkingDir,
 	})
+}
+
+// UnmarshalJSON deserializes Config from JSON (handles array Env format).
+func (c *Config) UnmarshalJSON(data []byte) error {
+	var raw configJSON
+	if err := json.Unmarshal(data, &raw); err != nil {
+		// Try legacy map format for backward compatibility
+		type legacyConfig struct {
+			Env        map[string]string `json:"env"`
+			Cmd        []string          `json:"cmd"`
+			WorkingDir string            `json:"workingDir"`
+		}
+		var legacy legacyConfig
+		if err2 := json.Unmarshal(data, &legacy); err2 != nil {
+			return err // return original error
+		}
+		c.Env = legacy.Env
+		if c.Env == nil {
+			c.Env = make(map[string]string)
+		}
+		c.Cmd = legacy.Cmd
+		c.WorkingDir = legacy.WorkingDir
+		return nil
+	}
+
+	c.Env = make(map[string]string)
+	for _, entry := range raw.Env {
+		parts := strings.SplitN(entry, "=", 2)
+		if len(parts) == 2 {
+			c.Env[parts[0]] = parts[1]
+		}
+	}
+	c.Cmd = raw.Cmd
+	c.WorkingDir = raw.WorkingDir
+	return nil
 }

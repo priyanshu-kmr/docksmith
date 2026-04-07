@@ -4,7 +4,7 @@ package layer
 type LayerInfo struct {
 	Digest    string `json:"digest"`     // SHA-256 of tar contents
 	Size      int64  `json:"size"`       // Size in bytes
-	CreatedBy string `json:"created_by"` // Instruction that created this layer
+	CreatedBy string `json:"createdBy"` // Instruction that created this layer
 }
 
 // NewLayerInfo creates a new LayerInfo instance

@@ -47,27 +47,25 @@ func (kg *KeyGenerator) ComputeKey(
 	h.Write([]byte(instruction.Text()))
 	h.Write([]byte("\n"))
 
-	// 3. Instruction-specific cache inputs
+	// 3. Include current WORKDIR (for both COPY and RUN)
+	h.Write([]byte("WORKDIR="))
+	h.Write([]byte(buildCtx.Workdir))
+	h.Write([]byte("\n"))
+
+	// 4. Include current ENV state (for both COPY and RUN)
+	h.Write([]byte("ENV\n"))
+	h.Write([]byte(buildCtx.SerializeEnv()))
+
+	// 5. Instruction-specific cache inputs
 	switch inst := instruction.(type) {
-		
 	case *stubs.CopyInstruction:
-		// For COPY, hash source file contents
+		// For COPY, also hash source file contents
 		if err := kg.hashCopySourcesInto(h, inst, buildCtx); err != nil {
 			return "", fmt.Errorf("hashing COPY sources: %w", err)
 		}
-		// COPY is affected by WORKDIR (destination resolution)
-		h.Write([]byte("WORKDIR="))
-		h.Write([]byte(buildCtx.Workdir))
-		h.Write([]byte("\n"))
-
 	case *stubs.RunInstruction:
-		// RUN is affected by both ENV and WORKDIR
-		h.Write([]byte("ENV\n"))
-		h.Write([]byte(buildCtx.SerializeEnv()))
-		h.Write([]byte("WORKDIR="))
-		h.Write([]byte(buildCtx.Workdir))
-		h.Write([]byte("\n"))
-
+		// RUN has no additional inputs beyond what's above
+		_ = inst
 	}
 
 	sum := h.Sum(nil)

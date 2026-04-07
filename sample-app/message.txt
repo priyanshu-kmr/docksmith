@@ -1,0 +1,3 @@
+Docksmith is running inside an isolated container!
+This file was copied from the build context via COPY instruction.
+If you can see this, the image was built and run successfully.

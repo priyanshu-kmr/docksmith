@@ -3,6 +3,7 @@ package build_test
 import (
 	"context"
 	"os"
+	"os/user"
 	"path/filepath"
 	"testing"
 	"time"
@@ -12,7 +13,16 @@ import (
 	"github.com/priyanshu/docksmith/internal/layer"
 )
 
+func requireRoot(t *testing.T) {
+	t.Helper()
+	u, err := user.Current()
+	if err != nil || u.Uid != "0" {
+		t.Skip("test requires root (sudo) for namespace isolation")
+	}
+}
+
 func TestBuildCreatesImageAndLayers(t *testing.T) {
+	requireRoot(t)
 	imagesDir, layersDir, cacheDir, ctxDir := setupBuildEnv(t)
 	seedBaseImage(t, imagesDir, layersDir, "base", "latest")
 
@@ -57,6 +67,7 @@ func TestBuildCreatesImageAndLayers(t *testing.T) {
 }
 
 func TestBuildPreservesCreatedOnCacheHit(t *testing.T) {
+	requireRoot(t)
 	imagesDir, layersDir, cacheDir, ctxDir := setupBuildEnv(t)
 	seedBaseImage(t, imagesDir, layersDir, "base", "latest")
 
@@ -95,6 +106,7 @@ func TestBuildPreservesCreatedOnCacheHit(t *testing.T) {
 }
 
 func TestBuildNoCacheDoesNotPreserveCreated(t *testing.T) {
+	requireRoot(t)
 	imagesDir, layersDir, cacheDir, ctxDir := setupBuildEnv(t)
 	seedBaseImage(t, imagesDir, layersDir, "base", "latest")
 
@@ -201,6 +213,7 @@ func mustMkdir(t *testing.T, p string) {
 }
 
 func TestBuildCacheCascadeMissInvalidatesDownstream(t *testing.T) {
+	requireRoot(t)
 	imagesDir, layersDir, cacheDir, ctxDir := setupBuildEnv(t)
 	seedBaseImage(t, imagesDir, layersDir, "base", "latest")
 

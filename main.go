@@ -12,12 +12,20 @@ import (
 	"github.com/priyanshu/docksmith/internal/build"
 	"github.com/priyanshu/docksmith/internal/image"
 	"github.com/priyanshu/docksmith/internal/layer"
+	"github.com/priyanshu/docksmith/internal/runtime"
 )
 
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)
+	}
+
+	// Handle re-exec for child process isolation.
+	// When RunIsolated re-executes this binary, "_ child" is the first arg.
+	if os.Args[1] == "_child" {
+		runtime.ChildMain(os.Args[1:])
+		return
 	}
 
 	switch os.Args[1] {
@@ -36,6 +44,13 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Error:", err)
 			os.Exit(1)
 		}
+	case "run":
+		exitCode, err := runRun(os.Args[2:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			os.Exit(1)
+		}
+		os.Exit(exitCode)
 	default:
 		printUsage()
 		os.Exit(1)
@@ -89,6 +104,7 @@ func printUsage() {
 	fmt.Println("  docksmith build -t <name:tag> [--no-cache] <context>")
 	fmt.Println("  docksmith images")
 	fmt.Println("  docksmith rmi <name:tag>")
+	fmt.Println("  docksmith run [-e KEY=VALUE]... <name:tag> [cmd...]")
 }
 
 func runImages() error {
@@ -156,6 +172,78 @@ func runRmi(args []string) error {
 	}
 	fmt.Printf("Removed image %s:%s\n", name, tag)
 	return nil
+}
+
+// envSlice is a flag.Value that collects repeatable -e KEY=VALUE flags.
+type envSlice []string
+
+func (e *envSlice) String() string { return strings.Join(*e, ", ") }
+func (e *envSlice) Set(val string) error {
+	if !strings.Contains(val, "=") {
+		return fmt.Errorf("invalid env format %q, expected KEY=VALUE", val)
+	}
+	*e = append(*e, val)
+	return nil
+}
+
+func runRun(args []string) (int, error) {
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+	var envFlags envSlice
+	fs.Var(&envFlags, "e", "environment variable override (KEY=VALUE), repeatable")
+	if err := fs.Parse(args); err != nil {
+		return 1, err
+	}
+
+	remaining := fs.Args()
+	if len(remaining) < 1 {
+		return 1, fmt.Errorf("run requires <name:tag> [cmd...]")
+	}
+
+	name, tag, err := splitNameTag(remaining[0])
+	if err != nil {
+		return 1, err
+	}
+
+	imagesDir, layersDir, _, err := stateDirs()
+	if err != nil {
+		return 1, err
+	}
+
+	imgStore, err := image.NewStore(imagesDir)
+	if err != nil {
+		return 1, err
+	}
+	layerStore, err := layer.NewStore(layersDir)
+	if err != nil {
+		return 1, err
+	}
+
+	manifest, err := imgStore.Load(name, tag)
+	if err != nil {
+		return 1, fmt.Errorf("image %s:%s not found", name, tag)
+	}
+
+	extractor := layer.NewExtractor(layerStore)
+	container := runtime.NewContainer(manifest, extractor)
+
+	// Apply env overrides
+	for _, e := range envFlags {
+		parts := strings.SplitN(e, "=", 2)
+		container.SetEnvOverride(parts[0], parts[1])
+	}
+
+	// Apply command override if provided
+	if len(remaining) > 1 {
+		container.SetCmdOverride(remaining[1:])
+	}
+
+	exitCode, err := container.Run()
+	if err != nil {
+		return 1, err
+	}
+
+	fmt.Printf("Container exited with code %d\n", exitCode)
+	return exitCode, nil
 }
 
 func splitNameTag(ref string) (string, string, error) {

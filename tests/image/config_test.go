@@ -18,8 +18,8 @@ func TestConfig_NewConfig(t *testing.T) {
 	if c.Cmd != nil {
 		t.Error("cmd should be nil initially")
 	}
-	if c.WorkingDir != "/" {
-		t.Errorf("workingDir should default to '/', got '%s'", c.WorkingDir)
+	if c.WorkingDir != "" {
+		t.Errorf("workingDir should default to empty string, got '%s'", c.WorkingDir)
 	}
 }
 

@@ -28,7 +28,7 @@ func NewConfig() *Config {
 	return &Config{
 		Env:        make(map[string]string),
 		Cmd:        nil,
-		WorkingDir: "/",
+		WorkingDir: "",
 	}
 }
 

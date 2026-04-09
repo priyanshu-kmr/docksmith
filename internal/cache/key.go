@@ -41,9 +41,7 @@ func (kg *KeyGenerator) ComputeKey(
 	h.Write([]byte(prevDigest))
 	h.Write([]byte("\n"))
 
-	// 2. Include instruction type and text
-	h.Write([]byte(instruction.Type()))
-	h.Write([]byte("\n"))
+	// 2. Include the full instruction text as written in the Docksmithfile
 	h.Write([]byte(instruction.Text()))
 	h.Write([]byte("\n"))
 

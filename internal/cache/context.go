@@ -22,7 +22,7 @@ type BuildContext struct {
 func NewBuildContext(contextDir string) *BuildContext {
 	return &BuildContext{
 		Env:        make(map[string]string),
-		Workdir:    "/",
+		Workdir:    "",
 		ContextDir: contextDir,
 	}
 }

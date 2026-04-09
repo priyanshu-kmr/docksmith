@@ -75,11 +75,20 @@ func RunIsolated(cfg RunConfig) (int, error) {
 	cmd.Env = envSlice
 
 	// Create new namespaces for isolation
+	// CLONE_NEWUSER allows running without root by mapping current UID/GID
+	// to root inside the container.
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWPID |
 			syscall.CLONE_NEWNS |
-			syscall.CLONE_NEWUTS,
+			syscall.CLONE_NEWUTS |
+			syscall.CLONE_NEWUSER,
 		Unshareflags: syscall.CLONE_NEWNS,
+		UidMappings: []syscall.SysProcIDMap{
+			{ContainerID: 0, HostID: os.Getuid(), Size: 1},
+		},
+		GidMappings: []syscall.SysProcIDMap{
+			{ContainerID: 0, HostID: os.Getgid(), Size: 1},
+		},
 	}
 
 	if err := cmd.Run(); err != nil {

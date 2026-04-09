@@ -1,0 +1,6 @@
+temp/
+docksmith
+DOCKSMITH.pdf
+coverage.out
+*.test
+.vscode

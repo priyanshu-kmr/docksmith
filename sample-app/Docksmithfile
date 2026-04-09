@@ -1,0 +1,7 @@
+FROM alpine:3.18
+WORKDIR /app
+ENV APP_NAME=docksmith-demo
+ENV GREETING=Hello
+COPY . /app
+RUN sh -c "echo 'Build complete at startup' > /app/build.log && chmod +x /app/run.sh"
+CMD ["sh", "/app/run.sh"]

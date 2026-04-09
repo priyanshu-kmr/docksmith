@@ -395,121 +395,131 @@ func computeDelta(rootFS string, before map[string]fileSnapshot, deltaDir string
 }
 
 func materializeCopy(inst *stubs.CopyInstruction, buildCtx *cache.BuildContext, root string) error {
-	sources, err := expandSources(buildCtx.ContextDir, inst.Sources)
-	if err != nil {
-		return err
-	}
-	if len(sources) == 0 {
-		return fmt.Errorf("COPY matched no sources")
-	}
-
 	// Resolve destination relative to WORKDIR
 	dest := inst.Dest
 	if !path.IsAbs(dest) {
-		dest = path.Join(buildCtx.Workdir, dest)
+		if buildCtx.Workdir != "" {
+			dest = path.Join(buildCtx.Workdir, dest)
+		} else {
+			dest = path.Join("/", dest)
+		}
 	}
+	normalizedDest := filepath.Clean(dest)
 
-	multiSource := len(sources) > 1
-	for _, relSrc := range sources {
-		srcPath := filepath.Join(buildCtx.ContextDir, relSrc)
-		info, err := os.Stat(srcPath)
-		if err != nil {
-			return err
-		}
+	for _, srcPattern := range inst.Sources {
+		srcPath := filepath.Join(buildCtx.ContextDir, srcPattern)
 
-		target, err := resolveCopyTarget(dest, relSrc, multiSource, info.IsDir())
-		if err != nil {
-			return err
-		}
-		targetPath := filepath.Join(root, target)
-
-		if info.IsDir() {
-			if err := copyDir(srcPath, targetPath); err != nil {
+		// Check for globs
+		if strings.ContainsAny(srcPattern, "*?") || strings.Contains(srcPattern, "**") {
+			matches, err := expandGlob(buildCtx.ContextDir, srcPattern)
+			if err != nil {
 				return err
 			}
-			continue
-		}
-		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
-			return err
-		}
-		if err := copyFile(srcPath, targetPath); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func expandSources(contextDir string, patterns []string) ([]string, error) {
-	set := map[string]struct{}{}
-	for _, pattern := range patterns {
-		if strings.Contains(pattern, "**") {
-			root := strings.Split(pattern, "**")[0]
-			walkRoot := filepath.Join(contextDir, root)
-			_ = filepath.Walk(walkRoot, func(p string, info os.FileInfo, err error) error {
-				if err != nil || info.IsDir() {
-					return nil
-				}
-				rel, _ := filepath.Rel(contextDir, p)
-				set[rel] = struct{}{}
-				return nil
-			})
-			continue
-		}
-
-		if strings.ContainsAny(pattern, "*?") {
-			matches, err := filepath.Glob(filepath.Join(contextDir, pattern))
-			if err != nil {
-				return nil, err
+			if len(matches) == 0 {
+				return fmt.Errorf("COPY %s matched no files", srcPattern)
 			}
-			for _, m := range matches {
-				rel, _ := filepath.Rel(contextDir, m)
-				set[rel] = struct{}{}
+			for _, relMatch := range matches {
+				matchPath := filepath.Join(buildCtx.ContextDir, relMatch)
+				targetPath := filepath.Join(root, normalizedDest, filepath.Base(relMatch))
+				if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+					return err
+				}
+				if err := copyFile(matchPath, targetPath); err != nil {
+					return err
+				}
 			}
 			continue
 		}
 
 		// Literal file or directory
-		fullPath := filepath.Join(contextDir, pattern)
-		info, err := os.Stat(fullPath)
+		info, err := os.Stat(srcPath)
 		if err != nil {
-			// Could be literal path — add as is
-			set[pattern] = struct{}{}
-			continue
+			return fmt.Errorf("COPY source %s: %w", srcPattern, err)
 		}
 
 		if info.IsDir() {
-			// Walk the directory and add all files
-			_ = filepath.Walk(fullPath, func(p string, fi os.FileInfo, err error) error {
-				if err != nil || fi.IsDir() {
-					return nil
-				}
-				rel, _ := filepath.Rel(contextDir, p)
-				set[rel] = struct{}{}
-				return nil
-			})
+			// Directory source: copy CONTENTS of directory into dest
+			// e.g., COPY . /app → contents of . go into /app/
+			destDir := filepath.Join(root, normalizedDest)
+			if err := os.MkdirAll(destDir, 0755); err != nil {
+				return err
+			}
+			if err := copyDirContents(srcPath, destDir); err != nil {
+				return err
+			}
 		} else {
-			set[pattern] = struct{}{}
+			// Single file source
+			targetPath := filepath.Join(root, normalizedDest)
+			// If dest ends with / or multiple sources, place file inside dest dir
+			if strings.HasSuffix(inst.Dest, "/") || len(inst.Sources) > 1 {
+				targetPath = filepath.Join(root, normalizedDest, filepath.Base(srcPattern))
+			}
+			if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+				return err
+			}
+			if err := copyFile(srcPath, targetPath); err != nil {
+				return err
+			}
 		}
 	}
-
-	out := make([]string, 0, len(set))
-	for p := range set {
-		out = append(out, p)
-	}
-	sort.Strings(out)
-	return out, nil
+	return nil
 }
 
-func resolveCopyTarget(dest string, src string, multiSource bool, srcIsDir bool) (string, error) {
-	normalizedDest := strings.TrimPrefix(path.Clean(dest), "/")
-	if normalizedDest == "." {
-		normalizedDest = ""
+func expandGlob(contextDir string, pattern string) ([]string, error) {
+	if strings.Contains(pattern, "**") {
+		// Recursive glob
+		root := strings.Split(pattern, "**")[0]
+		walkRoot := filepath.Join(contextDir, root)
+		var results []string
+		_ = filepath.Walk(walkRoot, func(p string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() {
+				return nil
+			}
+			rel, _ := filepath.Rel(contextDir, p)
+			results = append(results, rel)
+			return nil
+		})
+		sort.Strings(results)
+		return results, nil
 	}
 
-	if strings.HasSuffix(dest, "/") || multiSource || srcIsDir {
-		return filepath.Join(normalizedDest, filepath.Base(src)), nil
+	matches, err := filepath.Glob(filepath.Join(contextDir, pattern))
+	if err != nil {
+		return nil, err
 	}
-	return normalizedDest, nil
+	var results []string
+	for _, m := range matches {
+		rel, _ := filepath.Rel(contextDir, m)
+		results = append(results, rel)
+	}
+	sort.Strings(results)
+	return results, nil
+}
+
+// copyDirContents copies the CONTENTS of srcDir into destDir,
+// preserving relative subdirectory structure.
+// e.g., copyDirContents("/ctx", "/app") copies /ctx/file.txt → /app/file.txt
+func copyDirContents(srcDir, destDir string) error {
+	return filepath.Walk(srcDir, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(srcDir, p)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		target := filepath.Join(destDir, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, 0755)
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return err
+		}
+		return copyFile(p, target)
+	})
 }
 
 func copyDir(src, dest string) error {

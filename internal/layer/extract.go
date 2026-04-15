@@ -48,7 +48,14 @@ func Extract(tarReader io.Reader, destDir string) error {
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := root.MkdirAll(header.Name, os.FileMode(header.Mode)); err != nil {
+			// Use only standard permission bits; os.OpenRoot-based MkdirAll
+			// does not support special mode bits (sticky, setuid, setgid).
+			perm := header.FileInfo().Mode().Perm()
+			if header.Name == "./" || header.Name == "." {
+				// Root directory already exists; just skip.
+				continue
+			}
+			if err := root.MkdirAll(header.Name, perm); err != nil {
 				return fmt.Errorf("create dir %s: %w", header.Name, err)
 			}
 
@@ -58,7 +65,7 @@ func Extract(tarReader io.Reader, destDir string) error {
 				return fmt.Errorf("create parent dir for %s: %w", header.Name, err)
 			}
 
-			f, err := root.OpenFile(header.Name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
+			f, err := root.OpenFile(header.Name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, header.FileInfo().Mode().Perm())
 			if err != nil {
 				return fmt.Errorf("create file %s: %w", header.Name, err)
 			}

@@ -15,9 +15,9 @@ From the repository root:
 go build -o docksmith .
 ```
 
-### 2) Install globally
+### 2) Install globally 
 
-Install to `/usr/local/bin` so it is available system-wide (including `sudo docksmith ...`):
+Install to `/usr/local/bin` so it is available system-wide:
 
 ```bash
 sudo install -m 0755 docksmith /usr/local/bin/docksmith
@@ -42,8 +42,8 @@ grep -q 'export PATH="/usr/local/bin:$PATH"' ~/.bashrc || \
 source ~/.bashrc
 ```
 
-#### Zsh
-
+#### Zsh (Optional)
+If your default is zsh, use this
 ```bash
 grep -q 'export PATH="/usr/local/bin:$PATH"' ~/.zshrc || \
   printf '\n# docksmith path\nexport PATH="/usr/local/bin:$PATH"\n' >> ~/.zshrc
@@ -61,7 +61,7 @@ docksmith images
 To verify sudo path resolution too:
 
 ```bash
-sudo sh -lc 'command -v docksmith'
+sudo command -v docksmith
 ```
 
 ## Rebuild after code changes
@@ -78,4 +78,4 @@ go build will only update `./docksmith`, not `/usr/local/bin/docksmith`.
 
 ## Commands
 
-run `docksmith` in your shell to see list of commands
+run `docksmith` in your shell to see list of commands. Add `sudo` before every command. Eg ` sudo docksmith build -t demo:v1 sample-app`

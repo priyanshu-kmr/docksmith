@@ -3,7 +3,7 @@
 Docksmith is a lightweight container/image tool with image builds, layer caching, and isolated runtime execution. Currently only works on Linux natively. MacOS support is limited and works only via a docker image. 
 
 ## Requirements 
-- go 1.26.1
+- go 1.24+
 
 ## Setup
 
@@ -23,31 +23,21 @@ Install to `/usr/local/bin` so it is available system-wide:
 sudo install -m 0755 docksmith /usr/local/bin/docksmith
 ```
 
-If SELinux is enabled (eg.Fedora), apply the proper label:
-
-```bash
-sudo restorecon -v /usr/local/bin/docksmith || true
-```
-
-### 3) Add to PATH
+### 3) Add to PATH (Optional)
 
 `/usr/local/bin` is usually already in PATH, but add it explicitly if needed.
 
 #### Bash 
 
 ```bash
-grep -q 'export PATH="/usr/local/bin:$PATH"' ~/.bashrc || \
-  printf '\n# docksmith path\nexport PATH="/usr/local/bin:$PATH"\n' >> ~/.bashrc
-
+echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-#### Zsh (Optional)
+#### Zsh
 If your default is zsh, use this
 ```bash
-grep -q 'export PATH="/usr/local/bin:$PATH"' ~/.zshrc || \
-  printf '\n# docksmith path\nexport PATH="/usr/local/bin:$PATH"\n' >> ~/.zshrc
-
+echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 

@@ -1,7 +1,7 @@
 # Docksmith
 
 Docksmith is a lightweight container/image tool with image builds, layer caching, and isolated runtime execution. Currently only works on Linux natively. MacOS support is limited and works only via a docker image. 
-
+Every docksmith project needs a `docksmithfile` to build an image. Refer to `sample-app` in this repo to check how the file looks like.
 ## Requirements 
 - go 1.24+
 
@@ -65,7 +65,29 @@ sudo install -m 0755 docksmith /usr/local/bin/docksmith
 
 go build will only update `./docksmith`, not `/usr/local/bin/docksmith`.
 
+## Example 
+In this repo there is `sample-app` folder with the `docksmithfile` which has all the keywords supported by docksmith. To run it run follow the instructions below:
 
-## Commands
+#### Get Alpine base image
+Run the script file in `scripts` to get a test base image.
 
-run `docksmith` in your shell to see list of commands. Add `sudo` before every command. Eg `docksmith build -t demo:v1 sample-app`
+```bash
+bash scripts/setup-base-image.sh
+```
+#### Building and running the image
+To build the image in the `sample-app` folder, run the following command.
+
+```bash
+docksmith build -t demo:v1 sample-app
+```
+Running the image
+
+```bash
+sudo docksmith run demo:v1 
+```
+Your output should look something like this:
+<img width="649" height="401" alt="image" src="https://github.com/user-attachments/assets/699092b7-5793-4b16-bb70-b5adf0589f86" />
+
+## Additional commands
+Docksmith supports more commands like container related commands such as `rm`, `ps` and `start`. To view them simply run `docksmith` in your cli.
+

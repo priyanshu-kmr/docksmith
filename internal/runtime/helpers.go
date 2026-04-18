@@ -17,3 +17,11 @@ func CleanupRootFS(rootFS string) {
 func AssembleRootFS() (string, error) {
 	return os.MkdirTemp("", "docksmith-rootfs-")
 }
+
+// unmountAll attempts to unmount known mount points from rootFS.
+func unmountAll(rootFS string) {
+	mountPoints := []string{"proc", "dev", "sys", "tmp"}
+	for _, mp := range mountPoints {
+		_ = unixUnmount(rootFS + "/" + mp)
+	}
+}

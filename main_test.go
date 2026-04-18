@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -44,7 +45,7 @@ func TestRunImagesAndRmi(t *testing.T) {
 		t.Fatalf("set HOME: %v", err)
 	}
 
-	imagesDir, layersDir, _, err := stateDirs()
+	imagesDir, layersDir, _, _, _, err := stateDirs()
 	if err != nil {
 		t.Fatalf("stateDirs: %v", err)
 	}
@@ -208,7 +209,7 @@ func TestRunImagesMultipleTags(t *testing.T) {
 		t.Fatalf("set HOME: %v", err)
 	}
 
-	imagesDir, _, _, err := stateDirs()
+	imagesDir, _, _, _, _, err := stateDirs()
 	if err != nil {
 		t.Fatalf("stateDirs: %v", err)
 	}
@@ -246,7 +247,7 @@ func TestRunRmiMultipleImagesWithSameName(t *testing.T) {
 		t.Fatalf("set HOME: %v", err)
 	}
 
-	imagesDir, _, _, err := stateDirs()
+	imagesDir, _, _, _, _, err := stateDirs()
 	if err != nil {
 		t.Fatalf("stateDirs: %v", err)
 	}
@@ -295,5 +296,273 @@ func TestRunBuildNoCacheFlag(t *testing.T) {
 
 	if err := runBuild([]string{"-t", "app:v1", "--no-cache", ctxDir}); err != nil {
 		t.Logf("runBuild with --no-cache: %v (expected if alpine:3.18 not available)", err)
+	}
+}
+
+func TestRunPsFiltersRunningAndAll(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	t.Cleanup(func() { _ = os.Setenv("HOME", oldHome) })
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("set HOME: %v", err)
+	}
+
+	_, _, _, containersDir, _, err := stateDirs()
+	if err != nil {
+		t.Fatalf("stateDirs: %v", err)
+	}
+
+	now := time.Now().UTC()
+	started := now.Add(-2 * time.Minute)
+	finished := now.Add(-1 * time.Minute)
+	exitCode := 7
+
+	runningCfg := map[string]any{
+		"id":        "run12345",
+		"name":      "ctr-run12345",
+		"image":     "app:latest",
+		"command":   []string{"sleep", "60"},
+		"created":   now.Add(-3 * time.Minute).Format(time.RFC3339Nano),
+		"startedAt": started.Format(time.RFC3339Nano),
+		"pid":       os.Getpid(),
+		"layers":    []string{"sha256:aaa"},
+	}
+	exitedCfg := map[string]any{
+		"id":         "exi12345",
+		"name":       "ctr-exi12345",
+		"image":      "app:v2",
+		"command":    []string{"sh", "-c", "echo hi"},
+		"created":    now.Add(-5 * time.Minute).Format(time.RFC3339Nano),
+		"startedAt":  now.Add(-4 * time.Minute).Format(time.RFC3339Nano),
+		"finishedAt": finished.Format(time.RFC3339Nano),
+		"exitCode":   exitCode,
+		"layers":     []string{"sha256:bbb"},
+	}
+
+	writeContainerConfigJSON(t, containersDir, "run12345", runningCfg)
+	writeContainerConfigJSON(t, containersDir, "exi12345", exitedCfg)
+
+	outRunning := captureStdout(t, func() {
+		if err := runPs([]string{}); err != nil {
+			t.Fatalf("runPs: %v", err)
+		}
+	})
+	if !strings.Contains(outRunning, "ID") || !strings.Contains(outRunning, "run12345") {
+		t.Fatalf("expected running container in ps output:\n%s", outRunning)
+	}
+	if strings.Contains(outRunning, "exi12345") {
+		t.Fatalf("did not expect exited container without -a:\n%s", outRunning)
+	}
+
+	outAll := captureStdout(t, func() {
+		if err := runPs([]string{"-a"}); err != nil {
+			t.Fatalf("runPs -a: %v", err)
+		}
+	})
+	if !strings.Contains(outAll, "run12345") || !strings.Contains(outAll, "exi12345") {
+		t.Fatalf("expected both containers with -a:\n%s", outAll)
+	}
+	if !strings.Contains(outAll, "exited(7)") {
+		t.Fatalf("expected exited status with code:\n%s", outAll)
+	}
+}
+
+func TestRunStartValidatesArguments(t *testing.T) {
+	if _, err := runStart([]string{}); err == nil {
+		t.Fatalf("expected error for missing start argument")
+	}
+	if _, err := runStart([]string{"one", "two"}); err == nil {
+		t.Fatalf("expected error for too many start arguments")
+	}
+}
+
+func TestLoadContainerConfigByIdentifier(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	t.Cleanup(func() { _ = os.Setenv("HOME", oldHome) })
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("set HOME: %v", err)
+	}
+
+	_, _, _, containersDir, _, err := stateDirs()
+	if err != nil {
+		t.Fatalf("stateDirs: %v", err)
+	}
+
+	writeContainerConfigJSON(t, containersDir, "abc12345", map[string]any{
+		"id":      "abc12345",
+		"name":    "ctr-abc12345",
+		"image":   "demo:v1",
+		"command": []string{"sh"},
+		"layers":  []string{"sha256:aaa"},
+	})
+
+	cfgByID, err := loadContainerConfigByIdentifier(containersDir, "abc12345")
+	if err != nil {
+		t.Fatalf("lookup by id failed: %v", err)
+	}
+	if cfgByID.Image != "demo:v1" {
+		t.Fatalf("unexpected image: %s", cfgByID.Image)
+	}
+
+	cfgByName, err := loadContainerConfigByIdentifier(containersDir, "ctr-abc12345")
+	if err != nil {
+		t.Fatalf("lookup by name failed: %v", err)
+	}
+	if cfgByName.ID != "abc12345" {
+		t.Fatalf("unexpected id from name lookup: %s", cfgByName.ID)
+	}
+}
+
+func TestRunStartFailsWhenContainerDoesNotExist(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	t.Cleanup(func() { _ = os.Setenv("HOME", oldHome) })
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("set HOME: %v", err)
+	}
+
+	if _, err := runStart([]string{"missing"}); err == nil {
+		t.Fatalf("expected container not found error")
+	}
+}
+
+func TestRunStartFailsOnInvalidContainerImageRef(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	t.Cleanup(func() { _ = os.Setenv("HOME", oldHome) })
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("set HOME: %v", err)
+	}
+
+	_, _, _, containersDir, _, err := stateDirs()
+	if err != nil {
+		t.Fatalf("stateDirs: %v", err)
+	}
+
+	writeContainerConfigJSON(t, containersDir, "abc12345", map[string]any{
+		"id":      "abc12345",
+		"name":    "ctr-abc12345",
+		"image":   "invalid-image-ref",
+		"command": []string{"sh"},
+		"layers":  []string{"sha256:aaa"},
+	})
+
+	if _, err := runStart([]string{"abc12345"}); err == nil {
+		t.Fatalf("expected invalid image ref error")
+	}
+}
+
+func TestValidateContainerName(t *testing.T) {
+	valid := []string{"web", "web-1", "web_1", "web.1", "A1"}
+	for _, name := range valid {
+		if err := validateContainerName(name); err != nil {
+			t.Fatalf("expected valid container name %q: %v", name, err)
+		}
+	}
+	invalid := []string{"", "-bad", ".bad", "_bad", "bad name", "bad/name"}
+	for _, name := range invalid {
+		if err := validateContainerName(name); err == nil {
+			t.Fatalf("expected invalid container name %q", name)
+		}
+	}
+}
+
+func TestRunRunRejectsInvalidContainerName(t *testing.T) {
+	if _, err := runRun([]string{"--name", "bad name", "app:latest"}); err == nil {
+		t.Fatalf("expected invalid --name error")
+	}
+}
+
+func TestRunRmByIDAndName(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	t.Cleanup(func() { _ = os.Setenv("HOME", oldHome) })
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("set HOME: %v", err)
+	}
+
+	_, _, _, containersDir, _, err := stateDirs()
+	if err != nil {
+		t.Fatalf("stateDirs: %v", err)
+	}
+
+	writeContainerConfigJSON(t, containersDir, "abc12345", map[string]any{
+		"id":      "abc12345",
+		"name":    "web",
+		"image":   "demo:v1",
+		"command": []string{"sh"},
+		"layers":  []string{"sha256:aaa"},
+	})
+	writeContainerConfigJSON(t, containersDir, "def67890", map[string]any{
+		"id":      "def67890",
+		"name":    "api",
+		"image":   "demo:v2",
+		"command": []string{"sh"},
+		"layers":  []string{"sha256:bbb"},
+	})
+
+	if err := runRm([]string{"abc12345"}); err != nil {
+		t.Fatalf("runRm by id: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(containersDir, "abc12345")); !os.IsNotExist(err) {
+		t.Fatalf("expected abc12345 dir removed")
+	}
+
+	if err := runRm([]string{"api"}); err != nil {
+		t.Fatalf("runRm by name: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(containersDir, "def67890")); !os.IsNotExist(err) {
+		t.Fatalf("expected def67890 dir removed")
+	}
+}
+
+func TestRunRmFailsOnRunningAndMissingSelectors(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	t.Cleanup(func() { _ = os.Setenv("HOME", oldHome) })
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("set HOME: %v", err)
+	}
+
+	_, _, _, containersDir, _, err := stateDirs()
+	if err != nil {
+		t.Fatalf("stateDirs: %v", err)
+	}
+
+	writeContainerConfigJSON(t, containersDir, "run12345", map[string]any{
+		"id":        "run12345",
+		"name":      "running",
+		"image":     "demo:v1",
+		"command":   []string{"sleep", "60"},
+		"created":   time.Now().UTC().Format(time.RFC3339Nano),
+		"startedAt": time.Now().UTC().Add(-1 * time.Minute).Format(time.RFC3339Nano),
+		"pid":       os.Getpid(),
+		"layers":    []string{"sha256:aaa"},
+	})
+
+	if err := runRm([]string{"run12345"}); err == nil {
+		t.Fatalf("expected error when removing running container")
+	}
+	if err := runRm([]string{"demo"}); err == nil {
+		t.Fatalf("expected error for non-container selector")
+	}
+	if err := runRm([]string{"missing-selector"}); err == nil {
+		t.Fatalf("expected error for missing selector")
+	}
+}
+
+func writeContainerConfigJSON(t *testing.T, containersDir, id string, cfg map[string]any) {
+	t.Helper()
+	dir := filepath.Join(containersDir, id)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("mkdir container dir: %v", err)
+	}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), raw, 0644); err != nil {
+		t.Fatalf("write config: %v", err)
 	}
 }

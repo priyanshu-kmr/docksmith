@@ -24,6 +24,10 @@ type RunConfig struct {
 // It re-executes the current binary with a special "_child" argument
 // to perform the actual chroot + exec inside new namespaces.
 func RunIsolated(cfg RunConfig) (int, error) {
+	return runIsolated(cfg, nil)
+}
+
+func runIsolated(cfg RunConfig, onStart func(pid int) error) (int, error) {
 	if len(cfg.Command) == 0 {
 		return 1, fmt.Errorf("no command specified")
 	}
@@ -91,7 +95,18 @@ func RunIsolated(cfg RunConfig) (int, error) {
 		},
 	}
 
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Start(); err != nil {
+		return 1, fmt.Errorf("run isolated process: %w", err)
+	}
+	if onStart != nil {
+		if err := onStart(cmd.Process.Pid); err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			return 1, err
+		}
+	}
+
+	if err := cmd.Wait(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return exitErr.ExitCode(), nil
 		}

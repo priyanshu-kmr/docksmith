@@ -1,6 +1,6 @@
 # Docksmith
 
-Docksmith is a lightweight container/image tool with image builds, layer caching, and isolated runtime execution. Currently only works on Linux natively. MacOS support is only via a docker image. 
+Docksmith is a lightweight container/image tool with image builds, layer caching, and isolated runtime execution. Currently only works on Linux natively. MacOS support is limited and works only via a docker image. 
 
 ## Requirements 
 - go 1.26.1
@@ -23,17 +23,17 @@ Install to `/usr/local/bin` so it is available system-wide (including `sudo dock
 sudo install -m 0755 docksmith /usr/local/bin/docksmith
 ```
 
-If SELinux is enabled (eg.Fedora), apply the proper label (safe to run even if not needed):
+If SELinux is enabled (eg.Fedora), apply the proper label:
 
 ```bash
 sudo restorecon -v /usr/local/bin/docksmith || true
 ```
 
-### 3) Add to environment variables (PATH)
+### 3) Add to PATH
 
 `/usr/local/bin` is usually already in PATH, but add it explicitly if needed.
 
-#### Bash (default on most Linux systems)
+#### Bash 
 
 ```bash
 grep -q 'export PATH="/usr/local/bin:$PATH"' ~/.bashrc || \
@@ -73,4 +73,9 @@ go build -o docksmith .
 sudo install -m 0755 docksmith /usr/local/bin/docksmith
 ```
 
-go build will only updates `./docksmith`, not `/usr/local/bin/docksmith`.
+go build will only update `./docksmith`, not `/usr/local/bin/docksmith`.
+
+
+## Commands
+
+run `docksmith` in your shell to see list of commands

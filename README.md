@@ -68,4 +68,4 @@ go build will only update `./docksmith`, not `/usr/local/bin/docksmith`.
 
 ## Commands
 
-run `docksmith` in your shell to see list of commands. Add `sudo` before every command. Eg ` sudo docksmith build -t demo:v1 sample-app`
+run `docksmith` in your shell to see list of commands. Add `sudo` before every command. Eg `docksmith build -t demo:v1 sample-app`

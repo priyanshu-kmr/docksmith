@@ -1,4 +1,4 @@
-# Docksmith — Step-by-Step Demo Guide
+# Docksmith — Step-by-Step Demo Guide (OLD)
 
 ## Prerequisites
 
